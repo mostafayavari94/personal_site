@@ -1,0 +1,208 @@
+
+import (
+	"fmt"
+	"net/http"
+	"runtime"
+	"strings"
+	"text/template"
+	"database/sql"
+	_ "github.com/lib/pq"
+	"log"
+	"time"
+	"server/connection"
+    "encoding/json"
+)
+
+type Page struct {
+	Title  string
+	Header string
+	Body   string
+}
+
+func FunctionName() string {
+	pc, _, _, ok := runtime.Caller(1)
+	if !ok {
+		panic("Could not get context info for logger!")
+	}
+
+	funcName := runtime.FuncForPC(pc).Name()
+	return funcName[strings.LastIndex(funcName, ".")+1:] + ".html"
+
+}
+
+func index(w http.ResponseWriter, R *http.Request) {
+
+	var file = FunctionName()
+
+	funcsMap := map[string]interface{}{
+		"upper": strings.ToUpper,
+	}
+
+	t, err := template.New(file).Funcs(funcsMap).ParseFiles(file)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	err = t.ExecuteTemplate(w, file, Page{Title: "Mostafa yavari", Header: "It's a a personal website", Body: "This place should be created"})
+	if err != nil {
+		fmt.Println(err)
+	}
+}
+
+func addTime(w http.ResponseWriter, R *http.Request) {
+
+	var page = FunctionName()
+
+	t, err := template.New(page).ParseFiles(page)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	err = t.ExecuteTemplate(w, page, Page{Title: "Add Time"})
+	if err != nil {
+		fmt.Println(err)
+	}
+}
+
+func storeTime(w http.ResponseWriter, r *http.Request) {
+
+	// Establish a connection to the PostgreSQL database
+	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
+	connection.Host, connection.Port, connection.User, connection.Password, connection.DBname)
+
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// Open doesn't open a connection. Ping verifies that the database connection is alive.
+	err = db.Ping()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Create a table if it doesn't exist
+	createTableQuery := `
+	CREATE TABLE IF NOT EXISTS event (
+		id SERIAL PRIMARY KEY,
+		start_time TIME NOT NULL,
+		end_time TIME NOT NULL,
+		activity_date Date NOT NULL
+	);
+	`
+	_, err = db.Exec(createTableQuery)
+	if err != nil {
+		log.Fatal(err)
+	}
+	
+		
+	var validation []string
+
+	if r.PostFormValue("start_time") == "" {
+		validation =append(validation,"enter your start time")
+	}
+
+	if r.PostFormValue("end_time") == "" {
+		validation = append(validation,"enter your end time")
+	}
+
+	fmt.Println(validation)
+
+	if len(validation) != 0 {
+		w.Header().Set("Content-Type", "application/json")
+		temp, err := json.Marshal(validation)
+		if err != nil {
+			fmt.Println("Error marshaling JSON:", err)
+			return
+		}
+		w.Write(temp)
+		return
+	}
+
+	// Insert data into the table
+	// r.PostFormValue("start_time")
+	fmt.Println(r.PostFormValue("end_time"))
+	fmt.Println(string(r.PostFormValue("end_time")))
+
+	start_time := string(r.PostFormValue("start_time"))
+	end_time := string(r.PostFormValue("end_time"))
+
+	activity_date := string(r.PostFormValue("activity_date"))
+	if activity_date == "" {
+		// temp := string(time.Now().Format("2006-01-02 15:04:05"))
+		activity_date = time.Now().Format("2006-01-02 15:04:05")  
+	}
+	// time.
+	// fmt.Println(time.Now())
+	// startTime := time.Now()
+	// endTime := startTime.Add(2 * time.Hour) // Assuming the event duration is 2 hours
+
+	insertQuery := `INSERT INTO event (start_time, end_time, activity_date) VALUES ($1, $2, $3);`
+	fmt.Println(start_time)
+	fmt.Println(end_time)
+	_, err = db.Exec(insertQuery, start_time, end_time, activity_date)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println("Data inserted successfully.")
+
+	fmt.Printf(r.PostFormValue("start_time"))
+}
+
+func timesList(w w http.ResponseWriter, r *http.Request)  {
+	var page = FunctionName()
+
+	t, err := template.New(page).ParseFiles(page)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	err = t.ExecuteTemplate(w, page, Page{Title: "Times list"})
+	if err != nil {
+		fmt.Println(err)
+	}
+}
+
+// var userDB map[string]string
+
+// func add(w http.ResponseWriter, R *http.Request) {
+// 	userName := R.FormValue("userName")
+// 	password := R.FormValue("password")
+
+// 	_, ok := userDB["bob"]
+// 	if ok {
+// 		userDB[userName] = password
+// 	}
+// 	fmt.Println(userDB)
+// }
+
+func main() {
+	http.HandleFunc("/favicon.ico", func (w http.ResponseWriter, r *http.Request){
+		fmt.Printf("ridi")
+	})
+	http.HandleFunc("/", index)
+	
+	// http.HandleFunc("/times", addTime)
+	http.HandleFunc("/addTime", addTime)
+	http.HandleFunc("/storeTime", storeTime)
+	http.HandleFunc("/timesList", timesList)
+	
+
+	http.ListenAndServe(":4000", nil)
+}
+
+// func handleRequest(w http.ResponseWriter, r *http.Request) {
+// 	switch r.Method {
+// 	case http.MethodGet:
+// 		addTime(w, r)
+// 	case http.MethodPost:
+// 		handlePost(w, r)
+// 	default:
+// 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+// 	}
+// }
+
+// http.Handle("/", http.FileServer(http.Dir("css/")))
+// http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
